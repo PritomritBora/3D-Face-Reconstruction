@@ -142,7 +142,7 @@ class Mesher:
         # depth=7: ~1GB RAM, fast, sufficient for 50K face output
         log.info("Running Poisson reconstruction (depth=7)...")
         mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-            pcd, depth=8, width=0, scale=1.1, linear_fit=False
+            pcd, depth=7, width=0, scale=1.1, linear_fit=False
         )
         densities_np = np.asarray(densities)
         mesh.remove_vertices_by_mask(densities_np < np.quantile(densities_np, 0.01))
