@@ -69,11 +69,14 @@ class Reconstructor:
                  f"(track_len: min={track_lengths.min()} median={int(np.median(track_lengths))} max={track_lengths.max()})")
 
         # Filter by track length — points seen in more views are more reliable
-        # Background points typically have short tracks (seen in 2-3 views)
-        # Object points have longer tracks (seen in many views as camera orbits)
-        min_track = max(3, int(np.percentile(track_lengths, 25)))
-        pts = pts[track_lengths >= min_track]
-        colors = colors[track_lengths >= min_track]
+        # Use 20th percentile as minimum, but never below 2
+        min_track = max(2, int(np.percentile(track_lengths, 20)))
+        mask = track_lengths >= min_track
+        if mask.sum() >= 50:
+            pts = pts[mask]
+            colors = colors[mask]
+        else:
+            log.warning(f"Track filter (min={min_track}) would leave <50 points, skipping.")
         log.info(f"After track filter (min_track={min_track}): {len(pts):,} points")
 
         import open3d as o3d
@@ -577,7 +580,7 @@ class Reconstructor:
         ret = self._cmd([
             "image_undistorter",
             "--image_path", str(sfm_result.images_dir),
-            "--input_path", str(sfm_result.sparse_dir),
+            "--input_path", str(sfm_result.binary_sparse_dir or sfm_result.sparse_dir),
             "--output_path", str(dense_dir),
             "--output_type", "COLMAP",
             "--max_image_size", "800",
@@ -586,16 +589,16 @@ class Reconstructor:
             log.warning("image_undistorter failed.")
             return None
 
-        log.info("COLMAP: patch_match_stereo (CPU)...")
+        log.info("COLMAP: patch_match_stereo (GPU)...")
         ret = self._cmd([
             "patch_match_stereo",
             "--workspace_path", str(dense_dir),
             "--workspace_format", "COLMAP",
             "--PatchMatchStereo.geom_consistency", "true",
-            "--PatchMatchStereo.gpu_index", "-1",
+            "--PatchMatchStereo.gpu_index", "0",
             "--PatchMatchStereo.num_samples", "5",
-            "--PatchMatchStereo.num_iterations", "3",
-            "--PatchMatchStereo.max_image_size", "800",
+            "--PatchMatchStereo.num_iterations", "2",
+            "--PatchMatchStereo.max_image_size", "640",
         ])
         if ret != 0:
             log.warning("patch_match_stereo failed.")

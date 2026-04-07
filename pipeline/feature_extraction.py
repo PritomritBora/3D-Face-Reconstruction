@@ -27,6 +27,7 @@ class SfMResult:
     # image name -> list of (x,y,z) sparse 3D points visible in that image
     sparse_points: Dict[str, np.ndarray] = field(default_factory=dict)
     method: str = "colmap"
+    binary_sparse_dir: Path = None  # binary model dir for dense MVS
 
 
 class FeatureExtractor:
@@ -54,17 +55,7 @@ class FeatureExtractor:
         sparse_dir = self.work_dir / "sparse"
         sparse_txt_dir = self.work_dir / "sparse_txt"
 
-        # Always start fresh — stale database causes partial re-registration
-        if db_path.exists():
-            db_path.unlink()
-        if sparse_dir.exists():
-            shutil.rmtree(sparse_dir)
-        if sparse_txt_dir.exists():
-            shutil.rmtree(sparse_txt_dir)
-        resized_dir = self.work_dir / "resized"
-        if resized_dir.exists():
-            shutil.rmtree(resized_dir)
-
+        # Always start fresh — workspace is cleaned by run.py at startup
         sparse_dir.mkdir(parents=True, exist_ok=True)
         sparse_txt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -80,7 +71,7 @@ class FeatureExtractor:
             "--database_path", str(db_path),
             "--image_path", str(use_dir),
             "--ImageReader.single_camera", "1",
-            "--SiftExtraction.use_gpu", "0",
+            "--FeatureExtraction.use_gpu", "0",
             "--SiftExtraction.max_num_features", "8192",
         ])
         if ret != 0:
@@ -91,8 +82,8 @@ class FeatureExtractor:
         ret = self._cmd([
             matcher,
             "--database_path", str(db_path),
-            "--SiftMatching.use_gpu", "0",
-            "--SiftMatching.max_num_matches", "32768",
+            "--FeatureMatching.use_gpu", "0",
+            "--FeatureMatching.max_num_matches", "32768",
         ])
         if ret != 0:
             return None
@@ -161,11 +152,12 @@ class FeatureExtractor:
             poses=poses,
             sparse_points=sparse_points,
             method="colmap",
+            binary_sparse_dir=model_dir,
         )
 
     def _filter_blurry(self, image_paths: List[Path], threshold: float = 8.0) -> List[Path]:
-        """Remove motion-blurred frames using Laplacian variance.
-        Uses adaptive threshold: removes bottom 15% of frames by sharpness."""
+        """Remove motion-blurred frames using Laplacian variance on center crop.
+        Center crop avoids bokeh background giving false low sharpness scores."""
         try:
             import cv2
             scores = []
@@ -173,24 +165,23 @@ class FeatureExtractor:
                 img = cv2.imread(str(p), cv2.IMREAD_GRAYSCALE)
                 if img is None:
                     continue
-                scores.append((p, cv2.Laplacian(img, cv2.CV_64F).var()))
+                h, w = img.shape
+                # Score on center 50% — object is there, bokeh background is not
+                crop = img[h//4:3*h//4, w//4:3*w//4]
+                scores.append((p, cv2.Laplacian(crop, cv2.CV_64F).var()))
 
             if not scores:
                 return image_paths
 
-            # Adaptive: keep top 85% sharpest frames, but always keep at least 20
             scores.sort(key=lambda x: x[1], reverse=True)
             keep_n = max(20, int(len(scores) * 0.85))
-            sharp = [p for p, _ in scores[:keep_n]]
-            # Also apply absolute minimum threshold to remove truly blurry frames
-            sharp = [p for p, s in scores[:keep_n] if s >= 5.0]
+            sharp = [(p, s) for p, s in scores[:keep_n] if s >= 5.0]
             if len(sharp) < 10:
-                sharp = [p for p, _ in scores[:max(10, keep_n)]]
+                sharp = scores[:max(10, keep_n)]
 
-            log.info(f"Blur filter: {len(sharp)}/{len(image_paths)} frames kept "
-                     f"(min_score={min(s for _,s in scores[:len(sharp)]):.1f}, "
-                     f"max_score={max(s for _,s in scores[:len(sharp)]):.1f})")
-            return sharp
+            log.info(f"Blur filter (center crop): {len(sharp)}/{len(image_paths)} frames kept "
+                     f"(min={min(s for _,s in sharp):.1f} max={max(s for _,s in sharp):.1f})")
+            return [p for p, _ in sharp]
         except Exception as e:
             log.warning(f"Blur filter failed ({e}), using all frames.")
             return image_paths

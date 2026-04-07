@@ -50,8 +50,11 @@ def main():
         sys.exit(1)
 
     images = sorted(list(args.input.glob("*.jpg")) +
+                    list(args.input.glob("*.JPG")) +
                     list(args.input.glob("*.jpeg")) +
-                    list(args.input.glob("*.png")))
+                    list(args.input.glob("*.JPEG")) +
+                    list(args.input.glob("*.png")) +
+                    list(args.input.glob("*.PNG")))
 
     if len(images) == 0:
         print(f"[ERROR] No images found in {args.input}")
@@ -63,8 +66,11 @@ def main():
 
     print(f"[INFO] Found {len(images)} images")
 
-    # Set working directory
+    # Set working directory — always start fresh for reproducibility
     work_dir = args.work_dir or args.output.parent / f"{args.output.stem}_workspace"
+    if work_dir.exists():
+        import shutil
+        shutil.rmtree(work_dir, ignore_errors=True)
     work_dir.mkdir(parents=True, exist_ok=True)
 
     # Run pipeline

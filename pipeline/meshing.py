@@ -39,6 +39,9 @@ class Mesher:
             mesh = test_mesh
         else:
             log.info(f"Input is a point cloud: {len(pcd.points):,} points — running Poisson reconstruction")
+            if len(pcd.points) < 10:
+                log.error("Point cloud has too few points for reconstruction.")
+                return False
             mesh = self._poisson_from_pcd(pcd)
             if mesh is None:
                 return False
@@ -116,15 +119,14 @@ class Mesher:
             if k >= 2:
                 nn_dists.append(np.sqrt(dist2[1]))
         median_nn = float(np.median(nn_dists)) if nn_dists else 0.01
-        # Voxel = 2× median nn, but cap between 0.005m and 0.1m
-        voxel = float(np.clip(median_nn * 2.0, 0.005, 0.1))
+        # Voxel = 1.5× median nn — no upper cap for dense clouds
+        voxel = float(np.clip(median_nn * 1.5, 0.002, None))
         log.info(f"Estimated voxel size: {voxel:.4f}m (median_nn={median_nn:.4f}m)")
 
-        if n > 80_000:
+        if n > 200_000:
             pcd = pcd.voxel_down_sample(voxel_size=voxel)
             log.info(f"Downsampled to {len(pcd.points):,} points")
-            # If still too many, double voxel until under 80K
-            while len(pcd.points) > 80_000:
+            while len(pcd.points) > 200_000:
                 voxel *= 1.5
                 pcd = pcd.voxel_down_sample(voxel_size=voxel)
                 log.info(f"Re-downsampled to {len(pcd.points):,} points (voxel={voxel:.4f}m)")
@@ -139,13 +141,16 @@ class Mesher:
         )
         pcd.orient_normals_consistent_tangent_plane(k=15)
 
-        # depth=7: ~1GB RAM, fast, sufficient for 50K face output
-        log.info("Running Poisson reconstruction (depth=7)...")
+        # depth=9 for dense clouds (200K+ points), depth=7 for sparse
+        poisson_depth = 9 if len(pcd.points) > 50_000 else 7
+        log.info(f"Running Poisson reconstruction (depth={poisson_depth})...")
         mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-            pcd, depth=7, width=0, scale=1.1, linear_fit=False
+            pcd, depth=poisson_depth, width=0, scale=1.1, linear_fit=False
         )
         densities_np = np.asarray(densities)
-        mesh.remove_vertices_by_mask(densities_np < np.quantile(densities_np, 0.01))
+        # Trim only the very lowest density vertices (outer artifacts)
+        # Lower threshold = more watertight but more noise at boundaries
+        mesh.remove_vertices_by_mask(densities_np < np.quantile(densities_np, 0.005))
         log.info(f"Poisson mesh: {len(mesh.triangles):,} faces")
         return mesh
 
