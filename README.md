@@ -7,18 +7,17 @@ Converts a set of RGB images (< 200) into a clean, editable triangle mesh (OBJ/P
 ## Architecture
 
 ```
-Images → [Feature Extraction / SfM] → [Dense Reconstruction] → [Meshing] → OBJ/PLY
+Images → Blur Filter → COLMAP SfM → Track-Length Filter → Poisson Reconstruction → OBJ/PLY
 ```
 
-Two execution paths depending on environment:
-
-| Path | Feature Extraction | Dense Reconstruction | When used |
-|------|--------------------|----------------------|-----------|
-| **COLMAP** (preferred) | SIFT + exhaustive/sequential matching | Patch-match stereo + fusion | COLMAP binary in PATH |
-| **Depth Anything V2** (fallback) | OpenCV SIFT + essential matrix pose chain | Depth Anything V2 Small monocular depth | No COLMAP |
-| **MiDaS small** (secondary fallback) | OpenCV SIFT + essential matrix pose chain | MiDaS small monocular depth | No COLMAP, no transformers |
-
-Meshing is always Poisson surface reconstruction via Open3D, followed by decimation to ≤ 50K faces.
+| Stage | Method | Notes |
+|-------|--------|-------|
+| Frame selection | Laplacian variance blur filter | Keeps sharpest 85% of frames |
+| Feature extraction | COLMAP SIFT (CPU) | Exhaustive matching for <120 images |
+| SfM | COLMAP incremental mapper | Produces metric sparse point cloud |
+| Background filtering | Track-length filter | Removes points seen in few views (background) |
+| Surface reconstruction | Poisson (Open3D, depth=7) | Adaptive voxel size from point cloud density |
+| Cleanup | Largest component + hole fill + decimation | ≤ 50K faces output |
 
 ---
 
@@ -32,9 +31,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Requires Python 3.9+ and PyTorch with CUDA (recommended).
+Requires Python 3.9+. CUDA recommended but not required.
 
-### 2. COLMAP (recommended for best quality)
+### 2. COLMAP
 
 ```bash
 # Ubuntu/Debian
@@ -42,19 +41,17 @@ sudo apt install colmap
 
 # macOS
 brew install colmap
-
-# Or build from source: https://colmap.github.io/install.html
 ```
 
-If COLMAP is not available, the pipeline automatically falls back to MiDaS monocular depth estimation.
+> Note: Install the CPU-only build. GPU COLMAP is not required — the pipeline uses `SiftExtraction.use_gpu 0`.
 
-### 3. Pre-trained weights
+### 3. Optional: background removal
 
-- **Depth Anything V2 Small** — downloaded automatically on first run via HuggingFace hub (~100 MB, cached in `~/.cache/huggingface/`). Much lighter than DPT-Large.
-- **MiDaS small** — secondary fallback, downloaded via `torch.hub` (~80 MB). Used if `transformers` is unavailable.
-- **COLMAP** — no neural weights needed; uses classical SIFT.
+```bash
+pip install rembg onnxruntime
+```
 
-No manual weight downloads required.
+Used for foreground masking in the depth fusion fallback path.
 
 ---
 
@@ -64,54 +61,64 @@ No manual weight downloads required.
 python run.py --input ./images --output mesh.obj
 ```
 
-### All options
+### Options
 
 ```
---input        Directory of input RGB images (.jpg / .jpeg / .png)
---output       Output mesh path (.obj or .ply)
---max-faces    Max faces after decimation (default: 50000)
---depth-method colmap | midas  (default: colmap, auto-falls back to midas)
---work-dir     Custom working directory for intermediate files
+--input           Directory of input RGB images (.jpg / .jpeg / .png)
+--output          Output mesh path (.obj or .ply)
+--max-faces       Max faces after decimation (default: 50000)
+--work-dir        Custom working directory for intermediate files
 --keep-workspace  Keep intermediate files after completion
 ```
 
-### Examples
+---
 
+## Capture Guidelines
+
+Mesh quality depends heavily on input quality. For best results:
+
+| Factor | Recommendation |
+|--------|---------------|
+| Distance | 30–60 cm from object |
+| Coverage | Full 360° orbit at 2–3 height levels |
+| Speed | Move slowly — 30–40s per full orbit |
+| Lighting | Bright, diffuse (avoid harsh shadows) |
+| Background | Plain/dark background preferred |
+| Frame count | 60–120 frames |
+
+Check your capture sharpness before running:
 ```bash
-# Basic usage
-python run.py --input ./images --output mesh.obj
-
-# Force MiDaS path (no COLMAP)
-python run.py --input ./images --output mesh.ply --depth-method midas
-
-# Keep intermediates for inspection
-python run.py --input ./images --output mesh.obj --keep-workspace
+python3 -c "
+import cv2, numpy as np, os, sys
+imgs = [f for f in os.listdir(sys.argv[1]) if f.endswith(('.jpg','.png'))]
+scores = [cv2.Laplacian(cv2.imread(f'{sys.argv[1]}/{f}', 0), cv2.CV_64F).var() for f in imgs]
+print(f'Frames: {len(scores)}, Min: {min(scores):.0f}, Median: {np.median(scores):.0f}, Max: {max(scores):.0f}')
+print('Target: median > 50 for good results')
+" ./images
 ```
 
 ---
 
 ## Timing Benchmark
 
-Measured on RTX 3060 (12 GB), 50 images at 1920×1080:
+Measured on RTX 3060, Middlebury Temple Ring dataset (47 images, 1920×1080):
 
-| Stage | COLMAP path | Depth Anything V2 path |
-|-------|-------------|------------------------|
-| Feature extraction / SfM | ~45s | ~5s (OpenCV pose chain) |
-| Dense reconstruction | ~90s | ~45s (150 images, Small model) |
-| Meshing + decimation | ~20s | ~20s |
-| **Total** | **~2.5 min** | **~1.2 min** |
-
-Timing is logged to stdout at the end of every run.
+| Stage | Time |
+|-------|------|
+| Feature extraction / SfM | ~27s |
+| Reconstruction (sparse cloud) | ~4s |
+| Meshing + decimation | ~37s |
+| **Total** | **~68s (1.15 min)** |
 
 ---
 
 ## Output Quality
 
 - Triangle mesh with vertex normals
-- Watertight preferred (Poisson reconstruction)
-- Degenerate triangles removed
-- Holes ≤ 2% of bounding box filled (requires `trimesh`)
 - ≤ 50K faces after quadric decimation
+- Degenerate triangles removed
+- Largest connected component kept
+- Holes filled via trimesh
 
 ---
 
@@ -119,38 +126,22 @@ Timing is logged to stdout at the end of every run.
 
 | Package | Purpose |
 |---------|---------|
-| `torch` | Depth model inference |
 | `open3d` | Normal estimation, Poisson reconstruction, decimation, export |
-| `opencv-python` | Image loading, SIFT feature matching, pose estimation |
-| `transformers` | Depth Anything V2 Small (primary fallback depth model) |
-| `Pillow` | Image format support for transformers pipeline |
-| `trimesh` | Hole filling (optional but recommended) |
-| `scikit-learn` | Statistical outlier removal |
-| `colmap` (binary) | SfM + MVS (optional, recommended) |
+| `opencv-python` | Image loading, blur detection |
+| `trimesh` | Hole filling |
+| `torch` | Depth model inference (fallback path) |
+| `transformers` | Depth Anything V2 (fallback path) |
+| `rembg` | Background removal (fallback path) |
+| `colmap` (binary) | SfM — must be installed separately |
 
 ---
 
 ## Troubleshooting
 
-**CUDA out of memory** — the depth model is already using the small variant (~100MB). If you still OOM, force CPU:
-```bash
-CUDA_VISIBLE_DEVICES="" python run.py --input ./images --output mesh.obj --depth-method midas
-```
+**Few images registered** — check sharpness scores. If median < 20, the video has too much motion blur. Move the camera more slowly.
 
-Or reduce image count:
-```bash
-python run.py --input ./images --output mesh.obj --depth-method midas
-```
-(use a subset of images by copying fewer into the input dir)
+**Empty mesh / too few points** — COLMAP needs texture to find keypoints. Dark matte objects (black plastic, metal) are challenging. Use brighter lighting or add temporary texture markers.
 
-**Depth Anything V2 download fails** — pre-download manually:
-```bash
-python -c "from transformers import pipeline; pipeline('depth-estimation', model='depth-anything/Depth-Anything-V2-Small-hf')"
-```
+**COLMAP fails entirely** — falls back to OpenCV pose estimation + depth fusion automatically.
 
-**MiDaS fallback download fails** — pre-download manually:
-```bash
-python -c "import torch; torch.hub.load('intel-isl/MiDaS', 'MiDaS_small', trust_repo=True)"
-```
-
-**Empty mesh** — check that images have sufficient overlap (≥ 60% recommended) and consistent lighting.
+**OOM during meshing** — reduce `--max-faces` or the point cloud will be downsampled more aggressively.
