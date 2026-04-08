@@ -18,6 +18,8 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from pipeline.config import get as cfg
+
 log = logging.getLogger(__name__)
 
 
@@ -71,11 +73,13 @@ class FeatureExtractor:
             "--image_path", str(use_dir),
             "--ImageReader.single_camera", "1",
             "--SiftExtraction.use_gpu", "0",
-            "--SiftExtraction.max_num_features", "8192",
+            f"--SiftExtraction.max_num_features", str(cfg("colmap", "max_features")),
+            f"--SiftExtraction.peak_threshold", str(cfg("colmap", "peak_threshold")),
         ]) != 0:
             return None
 
-        matcher = "sequential_matcher" if n > 120 else "exhaustive_matcher"
+        exhaustive_max = cfg("input", "exhaustive_matching_limit")
+        matcher = "sequential_matcher" if n > exhaustive_max else "exhaustive_matcher"
         log.info(f"COLMAP: matching ({matcher})...")
         if self._cmd([
             matcher,
@@ -93,7 +97,6 @@ class FeatureExtractor:
             "--output_path", str(sparse_dir),
             "--Mapper.num_threads", "8",
             "--Mapper.init_min_tri_angle", "2",
-            "--Mapper.multiple_models", "0",
             "--Mapper.min_num_matches", "10",
             "--Mapper.abs_pose_min_num_inliers", "10",
         ]) != 0:
@@ -167,7 +170,7 @@ class FeatureExtractor:
                 return image_paths
 
             scores.sort(key=lambda x: x[1], reverse=True)
-            keep_n = max(20, int(len(scores) * 0.85))
+            keep_n = max(20, int(len(scores) * cfg("input", "blur_threshold_pct") / 100))
             sharp = [(p, s) for p, s in scores[:keep_n] if s >= 5.0]
             if len(sharp) < 10:
                 sharp = scores[:max(10, keep_n)]
@@ -298,5 +301,5 @@ class FeatureExtractor:
         """Run a COLMAP command, return exit code."""
         result = subprocess.run(["colmap"] + args, capture_output=True, text=True)
         if result.returncode != 0:
-            log.debug(result.stderr[-2000:])
+            log.warning(result.stderr[-1000:])
         return result.returncode

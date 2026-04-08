@@ -22,6 +22,8 @@ from pathlib import Path
 
 import numpy as np
 
+from pipeline.config import get as cfg
+
 log = logging.getLogger(__name__)
 
 
@@ -72,7 +74,9 @@ class Mesher:
         mesh = self._fill_holes(mesh)
 
         # Light smoothing to reduce Poisson staircase artifacts
-        mesh = mesh.filter_smooth_laplacian(number_of_iterations=3)
+        mesh = mesh.filter_smooth_laplacian(
+            number_of_iterations=cfg("meshing", "smooth_iterations")
+        )
         mesh.remove_degenerate_triangles()
         mesh.remove_unreferenced_vertices()
 
@@ -140,8 +144,8 @@ class Mesher:
         pcd.orient_normals_consistent_tangent_plane(k=15)
 
         # Higher Poisson depth = more detail but more RAM
-        # depth=9 for dense clouds, depth=7 for sparse
-        depth = 9 if len(pcd.points) > 50_000 else 7
+        depth = cfg("meshing", "poisson_depth_dense") if len(pcd.points) > 50_000 \
+            else cfg("meshing", "poisson_depth_sparse")
         log.info(f"Poisson reconstruction (depth={depth})...")
         mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
             pcd, depth=depth, width=0, scale=1.1, linear_fit=False
@@ -152,12 +156,11 @@ class Mesher:
         mesh.remove_vertices_by_mask(densities_np < np.quantile(densities_np, 0.005))
 
         # Centroid crop — removes geometry far from the object centre
-        # Uses 1.0 std from mean distance to centroid
         verts = np.asarray(mesh.vertices)
         if len(verts) > 0:
             centroid = verts.mean(axis=0)
             dists = np.linalg.norm(verts - centroid, axis=1)
-            threshold = dists.mean() + 1.0 * dists.std()
+            threshold = dists.mean() + cfg("meshing", "centroid_std") * dists.std()
             mesh.remove_vertices_by_mask(dists > threshold)
 
         log.info(f"Poisson mesh: {len(mesh.triangles):,} faces")

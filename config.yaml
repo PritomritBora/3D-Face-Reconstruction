@@ -1,0 +1,27 @@
+# Real-Time 3D Mesh Generation Pipeline — Configuration
+# Edit these values to tune quality vs speed tradeoffs.
+# All settings can also be overridden via CLI flags in run.py.
+
+# ── Input ──────────────────────────────────────────────────────────
+input:
+  exhaustive_matching_limit: 80  # Use exhaustive matching below this frame count,
+                                  # sequential matching above (exhaustive is O(n²))
+  blur_threshold_pct: 85          # Keep top X% sharpest frames (center-crop Laplacian)
+
+# ── Feature Extraction (COLMAP SfM) ────────────────────────────────
+colmap:
+  max_features: 8192      # SIFT keypoints per image (more = slower, better on low-texture)
+  peak_threshold: 0.004   # SIFT peak threshold (lower = more keypoints, default 0.0066)
+
+# ── Reconstruction (sparse point cloud) ────────────────────────────
+reconstruction:
+  outlier_std_ratio: 1.0  # Statistical outlier removal aggressiveness (lower = tighter)
+  depth_filter_ratio: 1.3 # Apply foreground depth filter when far/near > this ratio
+
+# ── Meshing (Poisson + cleanup) ─────────────────────────────────────
+meshing:
+  max_faces: 50000        # Target face count after decimation
+  poisson_depth_sparse: 7 # Poisson depth for sparse clouds (<50K points)
+  poisson_depth_dense: 9  # Poisson depth for dense clouds (>50K points)
+  centroid_std: 1.0       # Centroid crop threshold (lower = tighter crop)
+  smooth_iterations: 3    # Laplacian smoothing iterations

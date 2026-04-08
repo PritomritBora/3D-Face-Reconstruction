@@ -1,0 +1,62 @@
+"""
+Pipeline configuration loader.
+Reads config.yaml from the project root, with sensible defaults
+if the file is missing or a key is absent.
+"""
+from pathlib import Path
+from typing import Any
+
+_DEFAULTS = {
+    "input": {
+        "exhaustive_matching_limit": 80,
+        "blur_threshold_pct": 85,
+    },
+    "colmap": {
+        "max_features": 8192,
+        "peak_threshold": 0.004,
+    },
+    "reconstruction": {
+        "outlier_std_ratio": 1.0,
+        "depth_filter_ratio": 1.3,
+    },
+    "meshing": {
+        "max_faces": 50000,
+        "poisson_depth_sparse": 7,
+        "poisson_depth_dense": 9,
+        "centroid_std": 1.0,
+        "smooth_iterations": 3,
+    },
+}
+
+_CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
+_config = None
+
+
+def _load() -> dict:
+    global _config
+    if _config is not None:
+        return _config
+
+    cfg = {k: dict(v) for k, v in _DEFAULTS.items()}
+
+    if _CONFIG_PATH.exists():
+        try:
+            import yaml
+            with open(_CONFIG_PATH) as f:
+                user = yaml.safe_load(f) or {}
+            for section, values in user.items():
+                if section in cfg and isinstance(values, dict):
+                    cfg[section].update(values)
+        except ImportError:
+            pass  # yaml not installed — use defaults silently
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Could not load config.yaml: {e}")
+
+    _config = cfg
+    return _config
+
+
+def get(section: str, key: str) -> Any:
+    """Get a config value. Falls back to defaults if key is missing."""
+    return _load()[section][key]
