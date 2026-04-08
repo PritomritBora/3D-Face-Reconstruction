@@ -64,13 +64,13 @@ def main():
         print(f"[WARN] Found {len(images)} images, pipeline requires < 200. Using first 200.")
         images = images[:200]
 
-    # Subsample to exhaustive_matching_limit for timing budget
+    # Subsample to max_input_frames evenly spaced to maintain coverage
     from pipeline.config import get as cfg
-    limit = cfg("input", "exhaustive_matching_limit")
+    limit = cfg("input", "max_input_frames")
     if len(images) > limit:
         step = len(images) // limit
         images = images[::step][:limit]
-        print(f"[INFO] Subsampled to {len(images)} frames (exhaustive matching limit)")
+        print(f"[INFO] Subsampled to {len(images)} frames (max_input_frames={limit})")
 
     print(f"[INFO] Found {len(images)} images")
 

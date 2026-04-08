@@ -78,9 +78,9 @@ class FeatureExtractor:
         ]) != 0:
             return None
 
-        exhaustive_max = cfg("input", "exhaustive_matching_limit")
+        exhaustive_max = cfg("colmap", "exhaustive_limit")
         matcher = "sequential_matcher" if n > exhaustive_max else "exhaustive_matcher"
-        log.info(f"COLMAP: matching ({matcher})...")
+        log.info(f"COLMAP: matching ({matcher}, n={n}, exhaustive_limit={exhaustive_max})...")
         if self._cmd([
             matcher,
             "--database_path", str(db_path),
