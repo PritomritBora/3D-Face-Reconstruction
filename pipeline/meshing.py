@@ -102,6 +102,9 @@ class Mesher:
         """
         import open3d as o3d
 
+        # Strip colors — we only need geometry for reconstruction
+        pcd.colors = o3d.utility.Vector3dVector([])
+
         n = len(pcd.points)
         pts_arr = np.asarray(pcd.points)
 
@@ -147,6 +150,16 @@ class Mesher:
         # Trim the lowest-density outer shell (Poisson artifacts at boundaries)
         densities_np = np.asarray(densities)
         mesh.remove_vertices_by_mask(densities_np < np.quantile(densities_np, 0.005))
+
+        # Centroid crop — removes geometry far from the object centre
+        # Uses 1.0 std from mean distance to centroid
+        verts = np.asarray(mesh.vertices)
+        if len(verts) > 0:
+            centroid = verts.mean(axis=0)
+            dists = np.linalg.norm(verts - centroid, axis=1)
+            threshold = dists.mean() + 1.0 * dists.std()
+            mesh.remove_vertices_by_mask(dists > threshold)
+
         log.info(f"Poisson mesh: {len(mesh.triangles):,} faces")
         return mesh
 
@@ -184,8 +197,8 @@ class Mesher:
             filled.triangles = o3d.utility.Vector3iVector(tm.faces)
             log.info(f"Hole filling: {before:,} → {len(tm.faces):,} faces")
             return filled
-        except ImportError:
-            log.warning("trimesh not found, skipping hole filling.")
+        except ImportError as e:
+            log.warning(f"trimesh not found ({e}), skipping hole filling.")
             return mesh
         except Exception as e:
             log.warning(f"Hole filling failed ({e}), skipping.")
@@ -210,6 +223,9 @@ class Mesher:
         if ext not in (".obj", ".ply"):
             log.warning(f"Unknown extension '{ext}', writing as .ply")
             output_path = output_path.with_suffix(".ply")
+
+        # Strip colors — geometry only per spec
+        mesh.vertex_colors = o3d.utility.Vector3dVector([])
 
         ok = o3d.io.write_triangle_mesh(
             str(output_path), mesh,

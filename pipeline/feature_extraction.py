@@ -56,34 +56,32 @@ class FeatureExtractor:
         sparse_dir.mkdir(parents=True, exist_ok=True)
         sparse_txt_dir.mkdir(parents=True, exist_ok=True)
 
-        n = len(image_paths)
-
         # Resize to 1024px for faster SIFT extraction
-        resized_dir = self._resize_images(image_paths)
-        use_dir = resized_dir if resized_dir else image_paths[0].parent
-
-        # Remove blurry frames (center-crop Laplacian variance)
+        # Apply blur filter first, then resize only the sharp frames
         sharp_paths = self._filter_blurry(image_paths)
-        log.info(f"COLMAP: extracting features ({len(sharp_paths)} images)...")
+        resized_dir = self._resize_images(sharp_paths)
+        use_dir = resized_dir if resized_dir else sharp_paths[0].parent
+
+        n = len(sharp_paths)
+        log.info(f"COLMAP: extracting features ({n} images)...")
 
         if self._cmd([
             "feature_extractor",
             "--database_path", str(db_path),
             "--image_path", str(use_dir),
             "--ImageReader.single_camera", "1",
-            "--FeatureExtraction.use_gpu", "0",
+            "--SiftExtraction.use_gpu", "0",
             "--SiftExtraction.max_num_features", "8192",
         ]) != 0:
             return None
 
-        # Exhaustive matching for small sets (all pairs), sequential for larger
         matcher = "sequential_matcher" if n > 120 else "exhaustive_matcher"
         log.info(f"COLMAP: matching ({matcher})...")
         if self._cmd([
             matcher,
             "--database_path", str(db_path),
-            "--FeatureMatching.use_gpu", "0",
-            "--FeatureMatching.max_num_matches", "32768",
+            "--SiftMatching.use_gpu", "0",
+            "--SiftMatching.max_num_matches", "32768",
         ]) != 0:
             return None
 
@@ -297,7 +295,7 @@ class FeatureExtractor:
         ])
 
     def _cmd(self, args: list) -> int:
-        """Run a COLMAP command, return exit code. Logs stderr on failure."""
+        """Run a COLMAP command, return exit code."""
         result = subprocess.run(["colmap"] + args, capture_output=True, text=True)
         if result.returncode != 0:
             log.debug(result.stderr[-2000:])

@@ -1,6 +1,6 @@
 # Real-Time 3D Mesh Generation Pipeline
 
-Converts a set of RGB images (< 200) into a clean, editable triangle mesh (OBJ/PLY) in under 5 minutes on a consumer GPU.
+Converts a set of RGB images (< 200) into a clean, editable triangle mesh (OBJ/PLY) in under 5 minutes.
 
 ---
 
@@ -40,29 +40,38 @@ OBJ / PLY
 
 ### 1. Python environment
 
+**Option A — Python venv**
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Requires Python 3.9+. CUDA recommended but not required.
+**Option B — Conda**
+```bash
+conda create -n mesh3d python=3.10 -y
+conda activate mesh3d
+pip install -r requirements.txt
+```
+
+Requires Python 3.9+.
 
 ### 2. COLMAP
 
 ```bash
-# Ubuntu/Debian (CPU build — sufficient for SfM)
+# Ubuntu/Debian
 sudo apt install colmap
 
-# Or via conda (includes CUDA support for optional dense MVS)
-conda install -c conda-forge colmap
+# macOS
+brew install colmap
 ```
 
-> The pipeline uses CPU SIFT by default (`FeatureExtraction.use_gpu 0`), so a CPU-only COLMAP build works fine.
+> The pipeline uses CPU SIFT by default, so a CPU-only COLMAP build works fine.
+> Tested with COLMAP 3.9.1 (apt install on Ubuntu 24.04).
 
 ---
 
-## Usage
+## Run the pipeline
 
 ```bash
 python run.py --input ./images --output mesh.obj
@@ -80,6 +89,20 @@ python run.py --input ./images --output mesh.obj
 
 ---
 
+## Development environment
+
+| Component | Details |
+|-----------|---------|
+| GPU | NVIDIA GeForce RTX 3060 (12 GB VRAM) |
+| OS | Ubuntu 24.04, kernel 6.17 |
+| Python | 3.10.20 |
+| COLMAP | 3.9.1 (apt install, CPU SIFT) |
+| open3d | 0.19.0 |
+| opencv | 4.13.0 |
+| trimesh | 4.11.5 |
+
+---
+
 ## Capture Guidelines
 
 Mesh quality depends heavily on input quality.
@@ -93,22 +116,6 @@ Mesh quality depends heavily on input quality.
 | Background | Plain or dark background preferred |
 | Frame count | 50–120 frames |
 | Sharpness | Center-crop Laplacian variance > 50 (checked automatically) |
-
-Check your capture sharpness before running:
-
-```bash
-python3 -c "
-import cv2, numpy as np, os, sys
-folder = sys.argv[1]
-scores = []
-for f in os.listdir(folder):
-    img = cv2.imread(f'{folder}/{f}', 0)
-    if img is not None:
-        h, w = img.shape
-        scores.append(cv2.Laplacian(img[h//4:3*h//4, w//4:3*w//4], cv2.CV_64F).var())
-print(f'Frames: {len(scores)}  Median sharpness: {np.median(scores):.0f}  (target: >50)')
-" ./images
-```
 
 ---
 
@@ -142,7 +149,6 @@ Measured on RTX 3060, Buddha head dataset (67 images, 2736×1080):
 | `open3d` | Normal estimation, Poisson reconstruction, decimation, export |
 | `opencv-python` | Image loading, blur detection, resizing |
 | `trimesh` | Hole filling |
-| `torch` + `torchvision` | Available for optional depth model extensions |
 | `colmap` (binary) | SfM — must be installed separately (see Setup) |
 
 ---

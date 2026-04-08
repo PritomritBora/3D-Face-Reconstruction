@@ -162,7 +162,7 @@ class Reconstructor:
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pts.astype(np.float64))
         pcd.colors = o3d.utility.Vector3dVector(colors.astype(np.float64) / 255.0)
-        pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=1.5)
+        pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=1.0)
         log.info(f"After outlier removal: {len(pcd.points):,} points")
 
         out_ply = self.work_dir / "sparse.ply"
@@ -201,10 +201,9 @@ class Reconstructor:
         near_z = float(np.percentile(all_z, 20))
         far_z = float(np.percentile(all_z, 80))
 
-        # Only apply depth filter if there's a clear foreground/background separation
-        # (background is >2× further than foreground)
+        # Only apply depth filter if background is >1.3× further than foreground
         log.info(f"Depth analysis: near_z={near_z:.2f}m far_z={far_z:.2f}m ratio={far_z/near_z:.1f}×")
-        if far_z < near_z * 2.0:
+        if far_z < near_z * 1.3:
             log.info("Depth range small — skipping depth filter (object fills frame)")
             return pts, colors
 
