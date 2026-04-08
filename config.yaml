@@ -1,6 +1,8 @@
 # Real-Time 3D Mesh Generation Pipeline — Configuration
-# Edit these values to tune quality vs speed tradeoffs.
-# All settings can also be overridden via CLI flags in run.py.
+# ─────────────────────────────────────────────────────
+# THIS IS THE FILE TO EDIT to tune the pipeline.
+# Changes here take effect immediately on the next run — no code changes needed.
+# pipeline/config.py is the loader and should not be edited.
 
 # ── Input ──────────────────────────────────────────────────────────
 input:
