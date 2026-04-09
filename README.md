@@ -40,19 +40,12 @@ OBJ / PLY
 
 ### 1. Python environment
 
-**Option A — Python venv**
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Option B — Conda**
-```bash
-conda create -n mesh3d python=3.10 -y
-conda activate mesh3d
-pip install -r requirements.txt
-```
 
 Requires Python 3.9+.
 
