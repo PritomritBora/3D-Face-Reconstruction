@@ -58,10 +58,11 @@ class FeatureExtractor:
         sparse_dir.mkdir(parents=True, exist_ok=True)
         sparse_txt_dir.mkdir(parents=True, exist_ok=True)
 
-        # Resize to 1024px for faster SIFT extraction
-        # Apply blur filter first, then resize only the sharp frames
+        # Resize images — smaller for large sets to keep SIFT fast
         sharp_paths = self._filter_blurry(image_paths)
-        resized_dir = self._resize_images(sharp_paths)
+        resize_px = cfg("colmap", "resize_large") if len(sharp_paths) > 100 \
+            else cfg("colmap", "resize_small")
+        resized_dir = self._resize_images(sharp_paths, max_size=resize_px)
         use_dir = resized_dir if resized_dir else sharp_paths[0].parent
 
         n = len(sharp_paths)
@@ -86,6 +87,7 @@ class FeatureExtractor:
             "--database_path", str(db_path),
             "--SiftMatching.use_gpu", "0",
             "--SiftMatching.max_num_matches", "32768",
+            *(["--SequentialMatching.overlap", "10"] if matcher == "sequential_matcher" else []),
         ]) != 0:
             return None
 
@@ -182,8 +184,8 @@ class FeatureExtractor:
             log.warning(f"Blur filter failed ({e}), using all frames.")
             return image_paths
 
-    def _resize_images(self, image_paths: List[Path]) -> Optional[Path]:
-        """Resize images to max 1024px longest side for faster SIFT extraction."""
+    def _resize_images(self, image_paths: List[Path], max_size: int = 1024) -> Optional[Path]:
+        """Resize images to max_size px longest side for faster SIFT extraction."""
         try:
             import cv2
             out_dir = self.work_dir / "resized"
@@ -193,7 +195,7 @@ class FeatureExtractor:
                 if img is None:
                     continue
                 h, w = img.shape[:2]
-                scale = min(1.0, 1024 / max(h, w))
+                scale = min(1.0, max_size / max(h, w))
                 if scale < 1.0:
                     img = cv2.resize(img, (int(w * scale), int(h * scale)),
                                      interpolation=cv2.INTER_AREA)

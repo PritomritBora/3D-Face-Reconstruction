@@ -14,7 +14,9 @@ _DEFAULTS = {
     "colmap": {
         "max_features": 8192,
         "peak_threshold": 0.004,
-        "exhaustive_limit": 120,
+        "exhaustive_limit": 110,
+        "resize_large": 800,
+        "resize_small": 1024,
     },
     "reconstruction": {
         "outlier_std_ratio": 1.0,
