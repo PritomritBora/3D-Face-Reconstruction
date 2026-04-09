@@ -9,13 +9,12 @@ from typing import Any
 
 _DEFAULTS = {
     "input": {
-        "max_input_frames": 80,
         "blur_threshold_pct": 85,
     },
     "colmap": {
         "max_features": 8192,
         "peak_threshold": 0.004,
-        "exhaustive_limit": 60,
+        "exhaustive_limit": 120,
     },
     "reconstruction": {
         "outlier_std_ratio": 1.0,
