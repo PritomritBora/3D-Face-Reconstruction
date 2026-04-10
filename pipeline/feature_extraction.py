@@ -3,7 +3,7 @@ Stage 1 — Feature extraction and Structure-from-Motion (SfM).
 
 Uses COLMAP to:
   1. Extract SIFT keypoints from each image
-  2. Match keypoints across image pairs (exhaustive for <120 images, sequential otherwise)
+  2. Match keypoints across image pairs (exhaustive for <exhaustive_limit, sequential otherwise)
   3. Run incremental SfM to recover camera poses and a sparse 3D point cloud
 
 Output: SfMResult containing camera poses, intrinsics, and per-image sparse 3D points.
